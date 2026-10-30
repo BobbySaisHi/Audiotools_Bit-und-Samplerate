@@ -1,0 +1,1952 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Abtastrate &amp; Bittiefe</title>
+<style>
+  :root {
+    --c-analog: #888780;
+    --c-sample: #534AB7;
+    --c-quant: #D85A30;
+    --c-error: #378ADD;
+    --c-recon: #1D9E75;
+    --c-alias: #D4537E;
+    --c-grid: #D3D1C7;
+    --c-text-strong: #2C2C2A;
+    --c-text: #444441;
+    --c-text-muted: #5F5E5A;
+    --c-bg: #f5f5f5;
+    --c-panel: #ffffff;
+    --c-controls: #f9f9f9;
+    --c-border: #dddddd;
+    --font: "DejaVu Sans", Arial, sans-serif;
+    --font-mono: "DejaVu Sans Mono", monospace;
+    --thumb: 16px;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; }
+  body {
+    font-family: var(--font);
+    background: var(--c-bg);
+    color: var(--c-text);
+    overflow: hidden;
+  }
+  .app {
+    height: 100vh;
+    max-height: 900px;
+    max-width: 100%;
+    margin: 0 auto;
+    padding: 10px 12px;
+    background: var(--c-panel);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  header { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  h1 { margin: 0; font-size: 16px; color: var(--c-text-strong); }
+  .lang { display: flex; gap: 2px; }
+  .lang button { min-width: 36px; }
+
+  button {
+    font: 12px var(--font);
+    color: var(--c-text);
+    background: #fff;
+    border: 1px solid var(--c-border);
+    border-radius: 4px;
+    padding: 3px 7px;
+    cursor: pointer;
+    touch-action: manipulation;
+  }
+  button:hover { border-color: var(--c-analog); }
+  button[aria-pressed="true"] { background: var(--c-sample); border-color: var(--c-sample); color: #fff; }
+  :focus-visible { outline: 2px solid var(--c-error); outline-offset: 2px; }
+
+  /* Bedienelemente */
+  .controls {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(340px, 100%), 1fr));
+    gap: 8px 16px;
+    padding: 10px 12px;
+    background: var(--c-controls);
+    border-radius: 5px;
+    flex: none;
+  }
+  @media (min-width: 1260px) {
+    .controls { grid-template-columns: 1fr 1.2fr 1fr 1fr; }
+  }
+  .control { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .control-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+  .control-head label { font-weight: bold; font-size: 13px; color: #555; }
+  .value-input {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--c-text);
+    background: #eee;
+    border: 1px solid transparent;
+    padding: 2px 8px;
+    border-radius: 4px;
+    width: 120px;
+    text-align: right;
+    cursor: text;
+  }
+  .value-input:hover { border-color: var(--c-border); }
+  .value-input:focus { background: #fff; border-color: var(--c-sample); outline: none; }
+  .value-input.invalid { border-color: var(--c-quant); background: #fbeee9; }
+
+  .slider { position: relative; height: 38px; }
+  .slider.rows-2 { height: 50px; }
+  .slider.rows-3 { height: 62px; }
+  .track {
+    position: absolute; left: 0; right: 0; top: 9px; height: 6px;
+    background: var(--c-grid); border-radius: 3px; overflow: hidden;
+    pointer-events: none;
+  }
+  .zone { position: absolute; top: 0; bottom: 0; }
+  .zone.pro { background: rgba(83, 74, 183, 0.6); }
+  .zone.alias { background: rgba(216, 90, 48, 0.45); }
+  .pin {
+    position: absolute; top: 5px; height: 14px; width: 2px; margin-left: -1px;
+    pointer-events: none;
+  }
+  .pin.cd { background: var(--c-error); }
+  .pin.video { background: var(--c-text-muted); }
+  .pin.nyq { top: 3px; height: 18px; background: var(--c-quant); }
+  .marks { position: absolute; left: 0; right: 0; top: 23px; bottom: 0; pointer-events: none; }
+  .mark {
+    position: absolute; font-size: 10.5px; line-height: 12px; white-space: nowrap;
+    color: var(--c-text-muted);
+  }
+  .mark.cd { color: #1f6fbf; }
+  .mark.pro { color: var(--c-sample); }
+  .mark.nyq { color: var(--c-quant); }
+  .mark.active { color: var(--c-text-strong); font-weight: bold; }
+  .mark.alias.active { color: var(--c-quant); }
+
+  input[type="range"] {
+    position: absolute; left: 0; right: 0; top: 0; width: 100%; height: 24px; margin: 0;
+    background: transparent; -webkit-appearance: none; appearance: none; cursor: pointer;
+    touch-action: none;
+  }
+  input[type="range"]::-webkit-slider-runnable-track { height: 24px; background: transparent; }
+  input[type="range"]::-moz-range-track { height: 24px; background: transparent; }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: var(--thumb); height: var(--thumb); margin-top: 4px;
+    border-radius: 50%; background: var(--c-sample); border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--c-sample);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: var(--thumb); height: var(--thumb); box-sizing: border-box;
+    border-radius: 50%; background: var(--c-sample); border: 2px solid #fff;
+    box-shadow: 0 0 0 1px var(--c-sample);
+  }
+
+  .steps { display: flex; flex-wrap: wrap; gap: 3px; }
+  .steps button { padding: 2px 6px; font-family: var(--font-mono); font-size: 11.5px; border-bottom-width: 3px; }
+  .steps button.q-cd { border-bottom-color: rgba(55, 138, 221, 0.9); }
+  .steps button.q-pro { border-bottom-color: rgba(83, 74, 183, 0.85); }
+  .steps button.has-cap { padding: 2px 5px; display: inline-flex; flex-direction: column; align-items: center; line-height: 1.15; }
+  .steps .cap { font-family: var(--font); font-size: 9px; color: var(--c-text-muted); }
+  .steps button[aria-pressed="true"] .cap { color: #fff; }
+  .steps .placeholder { font-size: 11px; color: var(--c-text-muted); line-height: 22px; }
+
+  /* Ansicht */
+  .toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; flex: none; font-size: 11.5px; }
+  .toolbar .group { display: inline-flex; align-items: center; gap: 3px; }
+  .toolbar .group > span { margin-right: 2px; }
+  .toolbar .zbtn { min-width: 26px; font-family: var(--font-mono); padding: 2px 6px; }
+  .toolbar .hint { color: var(--c-text-muted); margin-left: auto; }
+
+  .plot { position: relative; min-height: 0; border: 1px solid var(--c-border); border-radius: 4px; }
+  .plot canvas { position: absolute; inset: 0; display: block; touch-action: none; cursor: grab; }
+  .plot canvas.dragging { cursor: grabbing; }
+  .plot-main { flex: 1 1 0; min-height: 200px; }
+
+  .legend {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 4px 14px;
+    font-size: 11.5px; flex: none;
+  }
+  .legend .item { display: inline-flex; align-items: center; gap: 5px; white-space: nowrap; }
+  .legend label.item { cursor: pointer; }
+  .legend input[type="checkbox"] { margin: 0; accent-color: var(--c-sample); }
+  .legend svg { flex: none; }
+  .note { font-size: 11.5px; color: var(--c-text); min-height: 15px; flex: none; }
+  .note .warn { color: var(--c-alias); font-weight: bold; }
+
+  /* Audio (Phase 2) */
+  .audio {
+    flex: none; display: flex; flex-direction: column; gap: 5px;
+    padding: 8px 12px; border: 1px solid var(--c-border); border-radius: 5px; font-size: 12px;
+  }
+  .audio.dragover { border-color: var(--c-sample); background: #f3f2fb; }
+  .audio-row { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+  .audio-title { font-weight: bold; font-size: 13px; color: #555; }
+  .audio .muted { color: var(--c-text-muted); font-size: 11.5px; }
+  .audio-name {
+    font-family: var(--font-mono); font-size: 11.5px; max-width: 420px;
+    overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .audio .group { display: inline-flex; align-items: center; gap: 3px; }
+  .audio .group > span { margin-right: 2px; }
+  .audio label.check { display: inline-flex; align-items: center; gap: 4px; cursor: pointer; margin-left: 4px; }
+  .audio input[type="checkbox"] { margin: 0; accent-color: var(--c-sample); }
+  .audio-status { font-size: 11.5px; }
+  .audio-status:empty { display: none; }
+  .audio-status .warn { color: var(--c-quant); font-weight: bold; }
+  .audio-hint { font-size: 11.5px; color: var(--c-text); }
+  .audio-hint summary { cursor: pointer; }
+  .audio-hint ul { margin: 4px 0 0 18px; padding: 0; }
+  .audio-hint li { margin: 2px 0; }
+  button:disabled { opacity: 0.45; cursor: default; }
+  button:disabled:hover { border-color: var(--c-border); }
+
+  @media (max-width: 640px), (max-height: 560px) {
+    body { overflow: auto; }
+    .app { height: auto; max-height: none; }
+    .plot-main { flex: none; height: 340px; }
+    .toolbar .hint { margin-left: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="app">
+  <header>
+    <h1 data-i18n="title"></h1>
+    <div class="lang" role="group" aria-label="Sprache / Language">
+      <button type="button" data-lang="de">DE</button>
+      <button type="button" data-lang="en">EN</button>
+    </div>
+  </header>
+
+  <section class="controls">
+    <div class="control">
+      <div class="control-head">
+        <label for="bits" data-i18n="bits"></label>
+        <input type="text" class="value-input" id="bits-value" inputmode="numeric" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="slider">
+        <div class="track" id="bits-track"></div>
+        <div id="bits-pins"></div>
+        <input type="range" id="bits" min="1" max="32" step="1">
+        <div class="marks" id="bits-marks"></div>
+      </div>
+      <div class="steps" id="bits-steps"></div>
+    </div>
+
+    <div class="control">
+      <div class="control-head">
+        <label for="fs" data-i18n="fs"></label>
+        <input type="text" class="value-input" id="fs-value" inputmode="decimal" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="slider">
+        <div class="track" id="fs-track"></div>
+        <div id="fs-pins"></div>
+        <input type="range" id="fs" min="0" max="1000" step="1">
+        <div class="marks" id="fs-marks"></div>
+      </div>
+      <div class="steps" id="fs-steps"></div>
+    </div>
+
+    <div class="control">
+      <div class="control-head">
+        <label for="freq" data-i18n="freq"></label>
+        <input type="text" class="value-input" id="freq-value" inputmode="decimal" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="slider rows-2" id="freq-slider">
+        <div class="track" id="freq-track"></div>
+        <div id="freq-pins"></div>
+        <input type="range" id="freq" min="0" max="1000" step="1">
+        <div class="marks" id="freq-marks"></div>
+      </div>
+      <div class="steps"><span class="placeholder" data-i18n="logScale"></span></div>
+    </div>
+
+    <div class="control">
+      <div class="control-head">
+        <label for="amp" data-i18n="amp"></label>
+        <input type="text" class="value-input" id="amp-value" inputmode="decimal" autocomplete="off" spellcheck="false">
+      </div>
+      <div class="slider">
+        <div class="track"></div>
+        <input type="range" id="amp" min="-60" max="0" step="0.5">
+        <div class="marks" id="amp-marks"></div>
+      </div>
+      <div class="steps"><span class="placeholder" data-i18n="ampHint"></span></div>
+    </div>
+  </section>
+
+  <section class="audio" id="audio" aria-labelledby="audio-title">
+    <div class="audio-row">
+      <span class="audio-title" id="audio-title" data-i18n="audioTitle"></span>
+      <input type="file" id="audio-file" accept="audio/*" hidden>
+      <button type="button" id="audio-choose" data-i18n="audioChoose"></button>
+      <span class="muted" data-i18n="audioDrop"></span>
+      <span class="audio-name" id="audio-name"></span>
+    </div>
+    <div class="audio-row">
+      <span class="group">
+        <button type="button" id="audio-play" data-i18n="audioPlay"></button>
+        <button type="button" id="audio-stop" data-i18n="audioStop"></button>
+        <label class="check"><input type="checkbox" id="audio-loop"><span data-i18n="audioLoop"></span></label>
+      </span>
+      <span class="group" role="group" aria-labelledby="ab-label">
+        <span id="ab-label" data-i18n="audioAB"></span>
+        <button type="button" id="ab-a" data-i18n="audioA"></button>
+        <button type="button" id="ab-b" data-i18n="audioB"></button>
+      </span>
+      <span class="group" role="group" aria-labelledby="dith-label">
+        <span id="dith-label" data-i18n="audioDither"></span>
+        <button type="button" id="dith-off" data-i18n="audioDitherOff"></button>
+        <button type="button" id="dith-tpdf" data-i18n="audioDitherTpdf"></button>
+        <button type="button" id="dith-ns" data-i18n="audioDitherNs"></button>
+      </span>
+      <span class="group" role="group" aria-labelledby="flt-label">
+        <span id="flt-label" data-i18n="audioFilter"></span>
+        <button type="button" id="flt-real" data-i18n="audioFilterReal"></button>
+        <button type="button" id="flt-raw" data-i18n="audioFilterRaw"></button>
+      </span>
+    </div>
+    <div class="audio-status" id="audio-status" aria-live="polite"></div>
+    <details class="audio-hint">
+      <summary><strong data-i18n="hintLead"></strong> <span data-i18n="hintShort"></span></summary>
+      <ul id="hint-list"></ul>
+    </details>
+  </section>
+
+  <div class="toolbar">
+    <span class="group"><span data-i18n="viewTime"></span>
+      <button type="button" class="zbtn" id="zoom-t-out">−</button>
+      <button type="button" class="zbtn" id="zoom-t-in">+</button>
+    </span>
+    <span class="group"><span data-i18n="viewAmp"></span>
+      <button type="button" class="zbtn" id="zoom-y-out">−</button>
+      <button type="button" class="zbtn" id="zoom-y-in">+</button>
+    </span>
+    <button type="button" id="zoom-periods" data-i18n="zoomPeriods"></button>
+    <button type="button" id="zoom-reset" data-i18n="zoomReset"></button>
+    <span class="hint" data-i18n="zoomHint"></span>
+  </div>
+
+  <div class="plot plot-main"><canvas id="mainCanvas" tabindex="0" role="img"></canvas></div>
+  <div class="legend" id="legend"></div>
+  <div class="note" id="note" aria-live="polite"></div>
+</div>
+
+<script>
+'use strict';
+
+/* =====================================================================
+ * Sprachobjekt – alle Texte der Oberfläche
+ * ===================================================================== */
+const I18N = {
+  de: {
+    locale: 'de-DE',
+    title: 'Abtastrate & Bittiefe',
+    bits: 'Bittiefe',
+    fs: 'Abtastrate',
+    freq: 'Sinusfrequenz',
+    amp: 'Amplitude',
+    logScale: 'logarithmische Skala',
+    ampHint: 'Pegel relativ zur Vollaussteuerung',
+    unitBit: 'Bit',
+    unitHz: 'Hz',
+    unitKHz: 'kHz',
+    unitDbfs: 'dBFS',
+    unitS: 's',
+    unitMs: 'ms',
+    unitUs: 'µs',
+    cd: 'CD-Qualität',
+    pro: 'professionelles Audio',
+    video: 'Videostandard',
+    nyqValue: v => `fs/2 = ${v}`,
+    nyqBelow: 'f < fs/2: kein Aliasing',
+    nyqAboveSide: 'f > fs/2: Aliasing',
+    nyqBelowLive: (f, fs) => `${f} < ${fs}/2: kein Aliasing`,
+    nyqAboveLive: (f, fs) => `${f} > ${fs}/2: Aliasing`,
+    viewTime: 'Zeit',
+    viewAmp: 'Amplitude',
+    zoomPeriods: 'Zoom auf 3 Perioden',
+    zoomReset: 'Zurücksetzen',
+    zoomHint: 'Strg + Mausrad: Zeit zoomen · Strg + Umschalt + Mausrad: Amplitude zoomen · Ziehen: verschieben',
+    zoomInTime: 'Zeitachse vergrößern',
+    zoomOutTime: 'Zeitachse verkleinern',
+    zoomInAmp: 'Amplitudenachse vergrößern',
+    zoomOutAmp: 'Amplitudenachse verkleinern',
+    plotLabel: 'Signaldarstellung. Pfeiltasten verschieben, Plus/Minus zoomen die Zeit, mit Umschalt die Amplitude, Pos1 setzt zurück.',
+    inputInvalid: 'Eingabe nicht erkannt',
+    legendAnalog: 'Analogsignal',
+    legendSample: 'Abtastwert',
+    legendQuant: 'quantisierter Wert',
+    legendGrid: 'Quantisierungsstufen',
+    legendError: 'Quantisierungsfehler',
+    legendHold: 'Sample-and-Hold (Treppe)',
+    legendRecon: 'bandbegrenzte Rekonstruktion',
+    legendAlias: v => `Alias ${v}`,
+    aliasNote: (f, nyq, fa, inv) =>
+      `${f} liegt über fs/2 = ${nyq} – die Abtastwerte beschreiben ebenso einen ${fa.replace(' ', '-')}-Sinus${inv ? ' (phaseninvertiert)' : ''}.`,
+    gridThinned: k => `Raster ausgedünnt: jede ${k}. Quantisierungsstufe`,
+    gridHidden: 'Raster ausgeblendet: Stufenabstand unter 3 px',
+    stepTitle: (v, q) => q ? `${v} – ${q}` : v,
+    audioTitle: 'Audio',
+    audioChoose: 'Datei wählen …',
+    audioDrop: 'oder Audiodatei hierher ziehen (wird nur lokal verarbeitet)',
+    audioPlay: '▶ Abspielen',
+    audioStop: '■ Stopp',
+    audioLoop: 'Schleife',
+    audioAB: 'Vergleich:',
+    audioA: 'A: Original',
+    audioB: 'B: simuliert',
+    audioDither: 'Dither:',
+    audioDitherOff: 'aus',
+    audioDitherTpdf: 'TPDF',
+    audioDitherNs: 'TPDF + Noise Shaping',
+    audioFilter: 'Filter:',
+    audioFilterReal: 'realistisch',
+    audioFilterRaw: 'ungefiltert',
+    audioChannels: n => (n === 1 ? 'Mono' : n === 2 ? 'Stereo' : `${n} Kanäle`),
+    audioInfo: (name, dur, ch) => `${name} · ${dur} · ${ch}`,
+    audioTruncated: 'auf die ersten 20 s gekürzt',
+    audioDecodeError: 'Die Datei konnte nicht dekodiert werden – das Format wird von diesem Browser nicht unterstützt.',
+    audioUnsupported: 'Dieser Browser unterstützt Web Audio bzw. AudioWorklet nicht.',
+    audioRateHint: (fs, sr) => `Die Abtastrate ${fs} liegt über der Ausgaberate des Browsers (${sr}): Die Abtastrate wird nicht simuliert, nur die Bittiefe.`,
+    hintLead: 'Hinweis:',
+    hintShort: 'Dies ist eine Simulation. Das Audiomaterial wird nachträglich auf die gewählte Bittiefe und Abtastrate umgerechnet und klingt daher nicht in jedem Punkt wie eine echte Aufnahme mit diesen Werten.',
+    hintItems: [
+      ['Filter:', 'Echte Wandler filtern vor der Abtastung alle Frequenzen oberhalb der halben Abtastrate heraus (Anti-Aliasing-Filter) und glätten das Signal bei der Wiedergabe (Rekonstruktionsfilter). Im Modus „realistisch“ wird das nachgebildet, im Modus „ungefiltert“ nicht – dort sind Aliasing und Spiegelanteile hörbar, die bei echten Geräten nicht auftreten.'],
+      ['Ausgangsmaterial:', 'Die Qualität ist nach oben durch die hochgeladene Datei begrenzt. Ist sie z.B. 16 Bit oder MP3-komprimiert, klingen höhere Einstellungen nicht besser.'],
+      ['Wiedergabegerät:', 'Der Browser gibt mit der Samplerate deiner Soundkarte aus (meist 48 kHz). Höhere Abtastraten können nicht hörbar gemacht werden.'],
+      ['Bittiefe:', 'Die Quantisierung entspricht weitgehend einer echten Wandlung.'],
+      ['', 'Noise Shaping verschiebt das Rauschen in weniger hörempfindliche hohe Frequenzen. Das funktioniert nur bei Abtastraten ab 44,1 kHz; bei niedrigeren Raten kann es schlechter klingen als einfaches Dithering.']
+    ]
+  },
+  en: {
+    locale: 'en-GB',
+    title: 'Sampling Rate & Bit Depth',
+    bits: 'Bit depth',
+    fs: 'Sampling rate',
+    freq: 'Sine frequency',
+    amp: 'Amplitude',
+    logScale: 'logarithmic scale',
+    ampHint: 'level relative to full scale',
+    unitBit: 'bit',
+    unitHz: 'Hz',
+    unitKHz: 'kHz',
+    unitDbfs: 'dBFS',
+    unitS: 's',
+    unitMs: 'ms',
+    unitUs: 'µs',
+    cd: 'CD quality',
+    pro: 'professional audio',
+    video: 'video standard',
+    nyqValue: v => `fs/2 = ${v}`,
+    nyqBelow: 'f < fs/2: no aliasing',
+    nyqAboveSide: 'f > fs/2: aliasing',
+    nyqBelowLive: (f, fs) => `${f} < ${fs}/2: no aliasing`,
+    nyqAboveLive: (f, fs) => `${f} > ${fs}/2: aliasing`,
+    viewTime: 'Time',
+    viewAmp: 'Amplitude',
+    zoomPeriods: 'Zoom to 3 periods',
+    zoomReset: 'Reset',
+    zoomHint: 'Ctrl + wheel: zoom time · Ctrl + Shift + wheel: zoom amplitude · Drag: pan',
+    zoomInTime: 'Zoom in time axis',
+    zoomOutTime: 'Zoom out time axis',
+    zoomInAmp: 'Zoom in amplitude axis',
+    zoomOutAmp: 'Zoom out amplitude axis',
+    plotLabel: 'Signal plot. Arrow keys pan, plus/minus zoom time, with Shift amplitude, Home resets.',
+    inputInvalid: 'Input not recognised',
+    legendAnalog: 'Analogue signal',
+    legendSample: 'Sample',
+    legendQuant: 'Quantised value',
+    legendGrid: 'Quantisation levels',
+    legendError: 'Quantisation error',
+    legendHold: 'Sample-and-hold (staircase)',
+    legendRecon: 'Band-limited reconstruction',
+    legendAlias: v => `Alias ${v}`,
+    aliasNote: (f, nyq, fa, inv) =>
+      `${f} lies above fs/2 = ${nyq} – the samples equally describe a ${fa} sine${inv ? ' (phase-inverted)' : ''}.`,
+    gridThinned: k => `Grid thinned: every ${k}th quantisation level`,
+    gridHidden: 'Grid hidden: level spacing below 3 px',
+    stepTitle: (v, q) => q ? `${v} – ${q}` : v,
+    audioTitle: 'Audio',
+    audioChoose: 'Choose file …',
+    audioDrop: 'or drag an audio file here (processed locally only)',
+    audioPlay: '▶ Play',
+    audioStop: '■ Stop',
+    audioLoop: 'Loop',
+    audioAB: 'Compare:',
+    audioA: 'A: original',
+    audioB: 'B: simulated',
+    audioDither: 'Dither:',
+    audioDitherOff: 'off',
+    audioDitherTpdf: 'TPDF',
+    audioDitherNs: 'TPDF + noise shaping',
+    audioFilter: 'Filter:',
+    audioFilterReal: 'realistic',
+    audioFilterRaw: 'unfiltered',
+    audioChannels: n => (n === 1 ? 'mono' : n === 2 ? 'stereo' : `${n} channels`),
+    audioInfo: (name, dur, ch) => `${name} · ${dur} · ${ch}`,
+    audioTruncated: 'trimmed to the first 20 s',
+    audioDecodeError: 'The file could not be decoded – this browser does not support the format.',
+    audioUnsupported: 'This browser does not support Web Audio or AudioWorklet.',
+    audioRateHint: (fs, sr) => `The sampling rate ${fs} is above the browser's output rate (${sr}): the sampling rate is not simulated, only the bit depth.`,
+    hintLead: 'Note:',
+    hintShort: 'This is a simulation. The audio is converted to the selected bit depth and sampling rate after the fact and therefore does not sound exactly like a genuine recording made with these settings in every respect.',
+    hintItems: [
+      ['Filters:', 'Real converters remove all frequencies above half the sampling rate before sampling (anti-aliasing filter) and smooth the signal on playback (reconstruction filter). The “realistic” mode emulates this, the “unfiltered” mode does not – there, aliasing and imaging components become audible that do not occur with real equipment.'],
+      ['Source material:', 'The quality is limited by the uploaded file. If it is, for example, 16-bit or MP3-compressed, higher settings will not sound any better.'],
+      ['Playback device:', 'The browser plays back at your sound card’s sample rate (usually 48 kHz). Higher sampling rates cannot be made audible.'],
+      ['Bit depth:', 'The quantisation largely corresponds to a real conversion.'],
+      ['', 'Noise shaping shifts the noise into high frequencies where hearing is less sensitive. This only works at sampling rates of 44.1 kHz and above; at lower rates it can sound worse than plain dithering.']
+    ]
+  }
+};
+
+/* =====================================================================
+ * Signal-, Abtast- und Quantisierungslogik – reine Funktionen,
+ * unabhängig von der Darstellung (wiederverwendbar für Phase 2 / Web Audio)
+ * ===================================================================== */
+const DSP = {
+  dbToLin: db => Math.pow(10, db / 20),
+
+  /** Analoger Sinus x(t) */
+  sine: (f, amp, t) => amp * Math.sin(2 * Math.PI * f * t),
+
+  /** Quantisierungsschritt bei Vollaussteuerung ±1 */
+  lsb: bits => 2 / Math.pow(2, bits),
+
+  /** Stufenindex k (Mid-Rise): Stufen liegen bei (k + 0,5) · LSB, k ∈ [−2^(N−1), 2^(N−1) − 1] */
+  levelIndex(x, bits) {
+    const half = Math.pow(2, bits - 1);
+    const k = Math.floor(x / DSP.lsb(bits));
+    return Math.max(-half, Math.min(half - 1, k));
+  },
+
+  levelValue: (k, bits) => (k + 0.5) * DSP.lsb(bits),
+
+  quantize: (x, bits) => DSP.levelValue(DSP.levelIndex(x, bits), bits),
+
+  /** Binärcode der Stufe (Offset-Binär, 0…0 = unterste Stufe) */
+  levelCode: (k, bits) => (k + Math.pow(2, bits - 1)).toString(2).padStart(bits, '0'),
+
+  /** Abtastwerte x[n] = x(n / fs) für n = n0 … n1 */
+  sample(f, amp, fs, n0, n1) {
+    const out = new Float64Array(Math.max(0, n1 - n0 + 1));
+    for (let i = 0; i < out.length; i++) out[i] = DSP.sine(f, amp, (n0 + i) / fs);
+    return out;
+  },
+
+  quantizeArray(xs, bits) {
+    const out = new Float64Array(xs.length);
+    for (let i = 0; i < xs.length; i++) out[i] = DSP.quantize(xs[i], bits);
+    return out;
+  },
+
+  /** Alias-Frequenz: in das Basisband [0, fs/2] gespiegelte Frequenz mit Vorzeichen (Phasenlage) */
+  alias(f, fs) {
+    const d = f - Math.round(f / fs) * fs;
+    return { freq: Math.abs(d), sign: d < 0 ? -1 : 1, aliased: f > fs / 2 };
+  },
+
+  sinc: x => (x === 0 ? 1 : Math.sin(Math.PI * x) / (Math.PI * x)),
+
+  /**
+   * Bandbegrenzte Rekonstruktion (Lanczos-gefensterte sinc-Interpolation)
+   * samples[i] gehört zu n = n0 + i; taps = halbe Fensterlänge in Samples
+   */
+  reconstruct(samples, n0, fs, t, taps) {
+    const c = t * fs;
+    const base = Math.floor(c);
+    let sum = 0;
+    for (let n = base - taps + 1; n <= base + taps; n++) {
+      const i = n - n0;
+      if (i < 0 || i >= samples.length) continue;
+      const d = c - n;
+      sum += samples[i] * DSP.sinc(d) * DSP.sinc(d / taps);
+    }
+    return sum;
+  }
+};
+
+/* =====================================================================
+ * Parameter, Ansicht und Zustand
+ * ===================================================================== */
+const PARAMS = {
+  bits: { min: 1, max: 32, steps: [1, 2, 3, 4, 8, 16, 24, 32] },
+  fs: { min: 1000, max: 192000, steps: [8000, 11025, 22050, 44100, 48000, 96000, 192000] },
+  freq: { min: 20, max: 20000 },
+  amp: { min: -60, max: 0 }
+};
+const QUALITY = {
+  bits: { cd: 16, proFrom: 24 },
+  fs: { cd: 44100, video: 48000, proFrom: 44100 }
+};
+const VIEW = {
+  t0: 0, T: 0.003, yc: 0, yr: 1,          // Startansicht: 3 Perioden bei 1 kHz, ±Vollaussteuerung
+  minT: 10e-6, maxT: 1, maxEnd: 10,
+  maxY: 1.1, minYAbs: 5e-10,
+  zoomStep: 1.5, panStep: 0.1
+};
+const SLIDER_RES = 1000;
+const RECON_TAPS = 32;
+const MIN_GRID_PX = 3;
+const MAX_THIN = 8;
+const MARK_ROW = 12;
+
+const state = {
+  lang: 'de',
+  bits: 3,
+  fs: 8000,
+  freq: 1000,
+  ampDb: 0,
+  showHold: true,
+  showRecon: false,
+  view: { t0: VIEW.t0, T: VIEW.T, yc: VIEW.yc, yr: VIEW.yr }
+};
+
+const L = () => I18N[state.lang];
+
+const round3 = v => Number(v.toPrecision(3));
+const clamp = (v, lo, hi) => Math.min(hi, Math.max(lo, v));
+const logPos = (v, min, max) => Math.log(v / min) / Math.log(max / min);
+const logVal = (p, min, max) => min * Math.pow(max / min, p);
+
+/* Qualitätsbezeichnungen eines Stufenwerts */
+const qualityOf = {
+  bits: v => [v === QUALITY.bits.cd && 'cd', v >= QUALITY.bits.proFrom && 'pro'].filter(Boolean),
+  fs: v => [v === QUALITY.fs.cd && 'cd', v === QUALITY.fs.video && 'video', v >= QUALITY.fs.proFrom && 'pro'].filter(Boolean)
+};
+
+/* =====================================================================
+ * Formatierung und Eingabe
+ * ===================================================================== */
+function fmtNum(v, opts) {
+  return new Intl.NumberFormat(L().locale, Object.assign({ useGrouping: false }, opts))
+    .format(v).replace('-', '−');
+}
+function fmtFreq(hz) {
+  if (hz >= 1000) return `${fmtNum(hz / 1000, { maximumFractionDigits: 3 })} ${L().unitKHz}`;
+  return `${fmtNum(hz, { maximumFractionDigits: 1 })} ${L().unitHz}`;
+}
+function fmtBits(b) { return `${b} ${L().unitBit}`; }
+function fmtDb(db) { return `${fmtNum(db, { minimumFractionDigits: 1, maximumFractionDigits: 1 })} ${L().unitDbfs}`; }
+
+const SUP = { '-': '⁻', '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹' };
+function fmtValue(v, step) {
+  if (v === 0 || Math.abs(v) < step * 1e-6) return fmtNum(0);
+  if (step >= 1e-3) return fmtNum(v, { maximumFractionDigits: Math.max(0, -Math.floor(Math.log10(step) + 1e-9)) });
+  const e = Math.floor(Math.log10(Math.abs(v)) + 1e-9);
+  const mant = v / Math.pow(10, e);
+  return `${fmtNum(mant, { maximumFractionDigits: 2 })}·10${String(e).replace(/./g, c => SUP[c])}`;
+}
+
+/** Zeiteinheit passend zur Fensterbreite */
+function timeUnit(T) {
+  if (T < 2e-3) return { scale: 1e6, unit: L().unitUs };
+  if (T < 2) return { scale: 1e3, unit: L().unitMs };
+  return { scale: 1, unit: L().unitS };
+}
+
+/**
+ * Freitext-Eingabe → Zahl in Basiseinheit (Hz, Bit, dBFS) oder null.
+ * Akzeptiert Dezimalkomma/-punkt, optionale Einheit (Hz, kHz, k, Bit, dB, dBFS).
+ */
+function parseEntry(kind, text) {
+  const s = text.trim().replace(/\s+/g, '').replace(',', '.').replace('−', '-').toLowerCase();
+  const m = s.match(/^([+-]?(?:\d+\.?\d*|\.\d+))(khz|k|hz|bits?|dbfs|db)?$/);
+  if (!m) return null;
+  let v = parseFloat(m[1]);
+  const unit = m[2] || '';
+  if (!isFinite(v)) return null;
+  switch (kind) {
+    case 'bits':
+      if (unit && !unit.startsWith('bit')) return null;
+      return clamp(Math.round(v), PARAMS.bits.min, PARAMS.bits.max);
+    case 'fs':
+      if (unit === 'khz' || unit === 'k') v *= 1000;
+      else if (unit === 'hz') { /* Hz */ }
+      else if (unit === '') v = v > PARAMS.fs.max / 1000 ? v : v * 1000;   // ohne Einheit: kHz (große Zahlen als Hz)
+      else return null;
+      return clamp(Math.round(v * 1000) / 1000, PARAMS.fs.min, PARAMS.fs.max);
+    case 'freq':
+      if (unit === 'khz' || unit === 'k') v *= 1000;
+      else if (unit !== '' && unit !== 'hz') return null;
+      return clamp(Math.round(v * 1000) / 1000, PARAMS.freq.min, PARAMS.freq.max);
+    case 'amp':
+      if (unit && !unit.startsWith('db')) return null;
+      return clamp(-Math.abs(v), PARAMS.amp.min, PARAMS.amp.max);
+  }
+  return null;
+}
+
+/* =====================================================================
+ * Ansicht (Zoom / Verschieben)
+ * ===================================================================== */
+function minYRange() {
+  const amp = DSP.dbToLin(state.ampDb);
+  return Math.max(VIEW.minYAbs, Math.min(2 * DSP.lsb(state.bits), amp * 0.5));
+}
+
+function clampView() {
+  const v = state.view;
+  v.T = clamp(v.T, VIEW.minT, VIEW.maxT);
+  v.t0 = clamp(v.t0, 0, VIEW.maxEnd - v.T);
+  v.yr = clamp(v.yr, Math.min(minYRange(), VIEW.maxY), VIEW.maxY);
+  v.yc = clamp(v.yc, -(VIEW.maxY - v.yr), VIEW.maxY - v.yr);
+}
+
+/** Zeitachse um Faktor skalieren (factor < 1 vergrößert), Anker als Anteil 0…1 der Breite */
+function zoomTime(factor, anchor = 0.5) {
+  const v = state.view;
+  const ta = v.t0 + anchor * v.T;
+  const T = clamp(v.T * factor, VIEW.minT, VIEW.maxT);
+  v.t0 = ta - anchor * T;
+  v.T = T;
+  clampView();
+  scheduleDraw();
+}
+
+/** Amplitudenachse skalieren, Anker als Anteil −1 (unten) … +1 (oben) */
+function zoomAmp(factor, anchor = 0) {
+  const v = state.view;
+  const va = v.yc + anchor * v.yr;
+  const yr = clamp(v.yr * factor, Math.min(minYRange(), VIEW.maxY), VIEW.maxY);
+  v.yc = va - anchor * yr;
+  v.yr = yr;
+  clampView();
+  scheduleDraw();
+}
+
+function pan(dxFrac, dyFrac) {
+  const v = state.view;
+  v.t0 += dxFrac * v.T;
+  v.yc += dyFrac * 2 * v.yr;
+  clampView();
+  scheduleDraw();
+}
+
+function resetView() {
+  Object.assign(state.view, { t0: VIEW.t0, T: VIEW.T, yc: VIEW.yc, yr: VIEW.yr });
+  clampView();
+  scheduleDraw();
+}
+
+function zoomToPeriods() {
+  state.view.T = 3 / state.freq;
+  clampView();
+  scheduleDraw();
+}
+
+/* =====================================================================
+ * Modell eines Darstellungsbildes (aus Zustand berechnet)
+ * ===================================================================== */
+function computeModel() {
+  clampView();
+  const { bits, fs, freq } = state;
+  const { t0, T, yc, yr } = state.view;
+  const amp = DSP.dbToLin(state.ampDb);
+  const alias = DSP.alias(freq, fs);
+  const nA = Math.ceil(t0 * fs - 1e-9);
+  const nB = Math.floor((t0 + T) * fs + 1e-9);
+  const n0 = nA - RECON_TAPS;
+  const x = DSP.sample(freq, amp, fs, n0, nB + RECON_TAPS);
+  const q = DSP.quantizeArray(x, bits);
+  const lsb = DSP.lsb(bits);
+  return { bits, fs, freq, amp, alias, t0, T, yc, yr, nA, nB, n0, x, q, lsb };
+}
+
+/* =====================================================================
+ * Canvas-Hilfen
+ * ===================================================================== */
+const COLORS = (() => {
+  const cs = getComputedStyle(document.documentElement);
+  const g = n => cs.getPropertyValue(n).trim();
+  return {
+    analog: g('--c-analog'), sample: g('--c-sample'), quant: g('--c-quant'), error: g('--c-error'),
+    recon: g('--c-recon'), alias: g('--c-alias'), grid: g('--c-grid'),
+    textStrong: g('--c-text-strong'), text: g('--c-text'), muted: g('--c-text-muted')
+  };
+})();
+const FONT = '11px "DejaVu Sans", Arial, sans-serif';
+const FONT_MONO = '11px "DejaVu Sans Mono", monospace';
+
+function fitCanvas(cv) {
+  const box = cv.parentElement.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  const w = Math.max(1, Math.floor(box.width));
+  const h = Math.max(1, Math.floor(box.height));
+  const bw = Math.round(w * dpr), bh = Math.round(h * dpr);
+  if (cv.width !== bw || cv.height !== bh) { cv.width = bw; cv.height = bh; }
+  cv.style.width = w + 'px';
+  cv.style.height = h + 'px';
+  const ctx = cv.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, w, h);
+  return { ctx, w, h };
+}
+
+function line(ctx, x1, y1, x2, y2) { ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2, y2); ctx.stroke(); }
+
+function dots(ctx, pts, r, color) {
+  ctx.fillStyle = color;
+  ctx.beginPath();
+  for (const [px, py] of pts) { ctx.moveTo(px + r, py); ctx.arc(px, py, r, 0, 2 * Math.PI); }
+  ctx.fill();
+}
+
+function niceStep(raw) {
+  const p = Math.pow(10, Math.floor(Math.log10(raw)));
+  const m = raw / p;
+  return (m < 1.5 ? 1 : m < 3.5 ? 2 : m < 7.5 ? 5 : 10) * p;
+}
+
+/**
+ * Zeichnet fn(t) über das Zeitfenster. Bei Schwingungen dichter als ~4 px
+ * wird je Pixelspalte die Hüllkurve (min/max) gezeichnet.
+ */
+function traceFunction(ctx, g, fn, fMax, bound) {
+  const periodPx = fMax > 0 ? g.pw / (fMax * g.T) : Infinity;
+  ctx.beginPath();
+  if (periodPx >= 4) {
+    const n = Math.min(200000, Math.max(g.pw * 2, Math.ceil((g.pw / periodPx) * 24)));
+    for (let i = 0; i <= n; i++) {
+      const t = g.t0 + g.T * i / n;
+      const px = g.tx(t), py = g.vy(fn(t));
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+  } else {
+    const cols = Math.ceil(g.pw);
+    const colT = g.T / cols;
+    for (let c = 0; c < cols; c++) {
+      const ta = g.t0 + c * colT;
+      let lo, hi;
+      if (bound !== undefined && colT * fMax >= 1) { lo = -bound; hi = bound; }
+      else {
+        lo = Infinity; hi = -Infinity;
+        for (let s = 0; s <= 12; s++) {
+          const v = fn(ta + colT * s / 12);
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+      }
+      const px = g.left + c + 0.5;
+      if (c === 0) ctx.moveTo(px, g.vy(hi)); else ctx.lineTo(px, g.vy(hi));
+      ctx.lineTo(px, g.vy(lo));
+    }
+  }
+  ctx.stroke();
+}
+
+/* Plot-Geometrie für die Interaktion */
+let plotGeom = null;
+
+/* =====================================================================
+ * Hauptplot
+ * ===================================================================== */
+function drawMain(m) {
+  const cv = document.getElementById('mainCanvas');
+  const { ctx, w, h } = fitCanvas(cv);
+  const left = 62, right = 14, top = 10, bottom = 24;
+  const pw = w - left - right;
+  const ph = h - top - bottom;
+  if (pw < 20 || ph < 20) return { gridInfo: null };
+  const cy = top + ph / 2;
+  const g = {
+    left, top, pw, ph, t0: m.t0, T: m.T,
+    tx: t => left + ((t - m.t0) / m.T) * pw,
+    vy: v => cy - ((v - m.yc) / m.yr) * (ph / 2)
+  };
+  plotGeom = { left, top, pw, ph };
+  const yLo = m.yc - m.yr, yHi = m.yc + m.yr;
+  const spacing = pw / (m.T * m.fs);
+  const nVis = m.nB - m.nA + 1;
+  const idx = n => n - m.n0;
+  const tn = n => n / m.fs;
+  const y0 = g.vy(0);
+
+  // Quantisierungsraster
+  const half = Math.pow(2, m.bits - 1);
+  const stepPx = m.lsb * ph / (2 * m.yr);
+  let thin = 1;
+  while (stepPx * thin < MIN_GRID_PX && thin <= MAX_THIN) thin *= 2;
+  const gridVisible = thin <= MAX_THIN;
+  const kMin = Math.max(-half, Math.ceil(yLo / m.lsb - 0.5));
+  const kMax = Math.min(half - 1, Math.floor(yHi / m.lsb - 0.5));
+  const showCodes = gridVisible && thin === 1 && m.bits <= 6 && stepPx >= 13;
+
+  if (gridVisible && kMax >= kMin) {
+    ctx.strokeStyle = COLORS.grid;
+    ctx.lineWidth = 0.5;
+    ctx.setLineDash([2, 3]);
+    ctx.beginPath();
+    for (let k = kMin; k <= kMax; k++) {
+      if (((k % thin) + thin) % thin !== 0) continue;
+      const y = Math.round(g.vy(DSP.levelValue(k, m.bits))) + 0.25;
+      ctx.moveTo(left, y);
+      ctx.lineTo(left + pw, y);
+    }
+    ctx.stroke();
+    ctx.setLineDash([]);
+  }
+
+  // Vollaussteuerung ±1
+  ctx.strokeStyle = COLORS.grid;
+  ctx.lineWidth = 1;
+  for (const fsv of [1, -1]) {
+    if (fsv > yLo && fsv < yHi) line(ctx, left, g.vy(fsv), left + pw, g.vy(fsv));
+  }
+
+  // Achsen
+  ctx.strokeStyle = COLORS.analog;
+  ctx.lineWidth = 0.5;
+  if (0 >= yLo && 0 <= yHi) line(ctx, left, y0, left + pw + 2, y0);
+  line(ctx, left, top - 4, left, top + ph + 4);
+  line(ctx, left, top + ph + 4, left + pw, top + ph + 4);
+
+  // Beschriftung y-Achse
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  if (showCodes) {
+    ctx.font = FONT_MONO;
+    ctx.fillStyle = COLORS.muted;
+    for (let k = kMin; k <= kMax; k++) {
+      ctx.fillText(DSP.levelCode(k, m.bits), left - 6, g.vy(DSP.levelValue(k, m.bits)));
+    }
+  } else {
+    ctx.font = FONT;
+    ctx.fillStyle = COLORS.text;
+    ctx.strokeStyle = COLORS.analog;
+    const yStep = niceStep((2 * m.yr) / Math.max(2, ph / 45));
+    for (let i = Math.ceil(yLo / yStep - 1e-9); i * yStep <= yHi + yStep * 1e-6; i++) {
+      const v = i * yStep + 0;
+      const py = g.vy(v);
+      if (py < top - 1 || py > top + ph + 1) continue;
+      line(ctx, left - 3, py, left, py);
+      ctx.fillText(fmtValue(v, yStep), left - 6, py);
+    }
+  }
+
+  // Beschriftung Zeitachse
+  const tu = timeUnit(m.T);
+  const tStep = niceStep(m.T / Math.max(2, pw / 90));
+  const tDec = Math.max(0, -Math.floor(Math.log10(tStep * tu.scale) + 1e-9));
+  ctx.font = FONT;
+  ctx.fillStyle = COLORS.text;
+  ctx.strokeStyle = COLORS.analog;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  for (let i = Math.ceil(m.t0 / tStep - 1e-9); i * tStep <= m.t0 + m.T + tStep * 1e-6; i++) {
+    const t = i * tStep + 0;
+    const px = g.tx(t);
+    line(ctx, px, top + ph + 4, px, top + ph + 7);
+    const label = `${fmtNum(t * tu.scale, { minimumFractionDigits: tDec, maximumFractionDigits: tDec })} ${tu.unit}`;
+    ctx.textAlign = px - left < 25 ? 'left' : left + pw - px < 25 ? 'right' : 'center';
+    ctx.fillText(label, px, h - 4);
+  }
+
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(left + 0.5, top - 4, pw + 4, ph + 8);
+  ctx.clip();
+
+  // Stiele der Abtastwerte
+  if (spacing >= 6) {
+    ctx.strokeStyle = COLORS.analog;
+    ctx.lineWidth = 0.5;
+    ctx.beginPath();
+    for (let n = m.nA; n <= m.nB; n++) {
+      const px = g.tx(tn(n));
+      ctx.moveTo(px, y0);
+      ctx.lineTo(px, g.vy(m.x[idx(n)]));
+    }
+    ctx.stroke();
+  }
+
+  // Analogsignal
+  ctx.strokeStyle = COLORS.analog;
+  ctx.lineWidth = 1.5;
+  traceFunction(ctx, g, t => DSP.sine(m.freq, m.amp, t), m.freq, m.amp);
+
+  // Bandbegrenzte Rekonstruktion
+  if (state.showRecon) {
+    ctx.strokeStyle = COLORS.recon;
+    ctx.lineWidth = 1.5;
+    traceFunction(ctx, g, t => DSP.reconstruct(m.q, m.n0, m.fs, t, RECON_TAPS), m.fs / 2);
+  }
+
+  // Alias-Kurve
+  if (m.alias.aliased) {
+    ctx.strokeStyle = COLORS.alias;
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    traceFunction(ctx, g, t => m.alias.sign * DSP.sine(m.alias.freq, m.amp, t), m.alias.freq, m.amp);
+    ctx.setLineDash([]);
+  }
+
+  // Sample-and-Hold-Treppe
+  if (state.showHold) {
+    ctx.strokeStyle = COLORS.quant;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    if (spacing >= 1) {
+      const nStart = m.nA - 1;
+      for (let n = nStart; n <= m.nB; n++) {
+        const y = g.vy(m.q[idx(n)]);
+        const x1 = Math.max(left, g.tx(tn(n)));
+        const x2 = Math.min(left + pw, g.tx(tn(n + 1)));
+        if (n === nStart) ctx.moveTo(x1, y); else ctx.lineTo(x1, y);
+        ctx.lineTo(x2, y);
+      }
+    } else {
+      const cols = Math.ceil(pw);
+      let n = m.nA - 1;
+      for (let c = 0; c < cols; c++) {
+        const tEnd = m.t0 + (c + 1) * m.T / cols;
+        let lo = m.q[idx(n)], hi = lo;
+        while (n + 1 <= m.nB && tn(n + 1) <= tEnd) {
+          n++;
+          const v = m.q[idx(n)];
+          if (v < lo) lo = v;
+          if (v > hi) hi = v;
+        }
+        const px = left + c + 0.5;
+        if (c === 0) ctx.moveTo(px, g.vy(hi)); else ctx.lineTo(px, g.vy(hi));
+        ctx.lineTo(px, g.vy(lo));
+      }
+    }
+    ctx.stroke();
+  }
+
+  // Quantisierungsfehler als Balken zwischen Abtastwert und Stufe
+  if (spacing >= 6) {
+    ctx.strokeStyle = COLORS.error;
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    ctx.beginPath();
+    for (let n = m.nA; n <= m.nB; n++) {
+      const y1 = g.vy(m.x[idx(n)]), y2 = g.vy(m.q[idx(n)]);
+      if (Math.abs(y2 - y1) < 1) continue;
+      const px = g.tx(tn(n));
+      ctx.moveTo(px, y1);
+      ctx.lineTo(px, y2);
+    }
+    ctx.stroke();
+    ctx.lineCap = 'butt';
+  }
+
+  // Quantisierte Werte und Abtastwerte
+  if (spacing >= 2 && nVis > 0) {
+    const rQ = spacing >= 6 ? 2.5 : 1.5;
+    const rS = spacing >= 6 ? 3 : 1.5;
+    const qPts = [], sPts = [];
+    for (let n = m.nA; n <= m.nB; n++) {
+      const px = g.tx(tn(n));
+      qPts.push([px, g.vy(m.q[idx(n)])]);
+      sPts.push([px, g.vy(m.x[idx(n)])]);
+    }
+    dots(ctx, qPts, rQ, COLORS.quant);
+    dots(ctx, sPts, rS, COLORS.sample);
+  }
+
+  ctx.restore();
+
+  return { gridInfo: gridVisible ? (thin > 1 ? thin : 0) : -1 };
+}
+
+/* =====================================================================
+ * Bedienoberfläche
+ * ===================================================================== */
+const $ = id => document.getElementById(id);
+const el = {
+  bits: $('bits'), fs: $('fs'), freq: $('freq'), amp: $('amp'),
+  bitsValue: $('bits-value'), fsValue: $('fs-value'), freqValue: $('freq-value'), ampValue: $('amp-value'),
+  bitsTrack: $('bits-track'), fsTrack: $('fs-track'), freqTrack: $('freq-track'),
+  bitsPins: $('bits-pins'), fsPins: $('fs-pins'), freqPins: $('freq-pins'),
+  bitsMarks: $('bits-marks'), fsMarks: $('fs-marks'), freqMarks: $('freq-marks'), ampMarks: $('amp-marks'),
+  bitsSteps: $('bits-steps'), fsSteps: $('fs-steps'),
+  freqSlider: $('freq-slider'), canvas: $('mainCanvas'), legend: $('legend'), note: $('note')
+};
+
+/* Position auf dem Slider unter Berücksichtigung der Daumenbreite */
+const thumbPos = p => `calc(var(--thumb) / 2 + ${p} * (100% - var(--thumb)))`;
+
+const posOf = {
+  bits: v => (v - PARAMS.bits.min) / (PARAMS.bits.max - PARAMS.bits.min),
+  fs: v => logPos(v, PARAMS.fs.min, PARAMS.fs.max),
+  freq: v => logPos(v, PARAMS.freq.min, PARAMS.freq.max),
+  amp: v => (v - PARAMS.amp.min) / (PARAMS.amp.max - PARAMS.amp.min)
+};
+
+function addZone(track, cls, p1, p2) {
+  const z = document.createElement('div');
+  z.className = 'zone ' + cls;
+  z.style.left = thumbPos(p1);
+  z.style.right = p2 >= 1 ? '0' : `calc(100% - ${thumbPos(p2)})`;
+  track.appendChild(z);
+}
+
+function addPin(container, cls, p) {
+  const d = document.createElement('div');
+  d.className = 'pin ' + cls;
+  d.style.left = thumbPos(p);
+  container.appendChild(d);
+}
+
+/**
+ * Beschriftung unter dem Slider; align: 'start' (rechts vom Punkt), 'end' (links davon), 'center'.
+ * Wird in die Containerbreite eingepasst; gibt die belegte Spanne zurück.
+ */
+function addMark(container, text, p, align, row, cls) {
+  const s = document.createElement('span');
+  s.className = 'mark' + (cls ? ' ' + cls : '');
+  s.textContent = text;
+  s.style.top = (row - 1) * MARK_ROW + 'px';
+  container.appendChild(s);
+  const W = container.clientWidth;
+  const thumb = 16;
+  const x = thumb / 2 + p * (W - thumb);
+  const w = s.offsetWidth;
+  let l = align === 'end' ? x - w - 3 : align === 'center' ? x - w / 2 : x + 3;
+  l = Math.max(0, Math.min(W - w, l));
+  s.style.left = l + 'px';
+  return { l, r: l + w };
+}
+
+function buildStaticMarks() {
+  const t = L();
+  el.bitsTrack.replaceChildren();
+  el.bitsPins.replaceChildren();
+  el.bitsMarks.replaceChildren();
+  addZone(el.bitsTrack, 'pro', posOf.bits(QUALITY.bits.proFrom), 1);
+  addPin(el.bitsPins, 'cd', posOf.bits(QUALITY.bits.cd));
+  addMark(el.bitsMarks, t.pro, 1, 'end', 1, 'pro');
+
+  el.fsTrack.replaceChildren();
+  el.fsPins.replaceChildren();
+  el.fsMarks.replaceChildren();
+  addZone(el.fsTrack, 'pro', posOf.fs(QUALITY.fs.proFrom), 1);
+  addPin(el.fsPins, 'cd', posOf.fs(QUALITY.fs.cd));
+  addPin(el.fsPins, 'video', posOf.fs(QUALITY.fs.video));
+  addMark(el.fsMarks, t.pro, 1, 'end', 1, 'pro');
+
+  el.ampMarks.replaceChildren();
+  addMark(el.ampMarks, fmtDb(PARAMS.amp.min), 0, 'start', 1);
+  addMark(el.ampMarks, fmtDb(PARAMS.amp.max), 1, 'end', 1);
+}
+
+function updateNyquistMark() {
+  const t = L();
+  const nyq = state.fs / 2;
+  const aliased = state.freq > nyq;
+  el.freqTrack.replaceChildren();
+  el.freqPins.replaceChildren();
+  el.freqMarks.replaceChildren();
+  if (nyq < PARAMS.freq.max) {
+    const p = Math.max(0, posOf.freq(Math.max(nyq, PARAMS.freq.min)));
+    addZone(el.freqTrack, 'alias', p, 1);
+    addPin(el.freqPins, 'nyq', p);
+    addMark(el.freqMarks, t.nyqValue(fmtFreq(nyq)), p, 'center', 1, 'nyq');
+    const below = aliased ? t.nyqBelow : t.nyqBelowLive(fmtFreq(state.freq), fmtFreq(state.fs));
+    const above = aliased ? t.nyqAboveLive(fmtFreq(state.freq), fmtFreq(state.fs)) : t.nyqAboveSide;
+    const a = addMark(el.freqMarks, below, p, 'end', 2, aliased ? '' : 'active');
+    const b = addMark(el.freqMarks, above, p, 'start', 2, 'alias' + (aliased ? ' active' : ''));
+    const collide = b.l < a.r + 4;
+    if (collide) {
+      el.freqMarks.lastChild.style.top = 2 * MARK_ROW + 'px';
+    }
+    el.freqSlider.classList.toggle('rows-3', collide);
+    el.freqSlider.classList.toggle('rows-2', !collide);
+  } else {
+    addMark(el.freqMarks, t.nyqBelowLive(fmtFreq(state.freq), fmtFreq(state.fs)), 1, 'end', 1, 'active');
+    el.freqSlider.classList.remove('rows-2', 'rows-3');
+  }
+}
+
+function buildSteps(container, key, fmt) {
+  container.replaceChildren();
+  for (const v of PARAMS[key].steps) {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.dataset.value = v;
+    b.textContent = key === 'fs' ? fmtNum(v / 1000, { maximumFractionDigits: 3 }) : String(v);
+    const qs = qualityOf[key](v);
+    const cap = qs.find(q => q === 'cd' || q === 'video');
+    if (cap) {
+      const c = document.createElement('span');
+      c.className = 'cap';
+      c.textContent = L()[cap];
+      b.appendChild(c);
+      b.classList.add('has-cap');
+    }
+    if (qs.includes('cd')) b.classList.add('q-cd');
+    else if (qs.includes('pro')) b.classList.add('q-pro');
+    b.title = L().stepTitle(fmt(v), qs.map(q => L()[q]).join(' / '));
+    b.setAttribute('aria-label', b.title);
+    b.addEventListener('click', () => {
+      state[key] = v;
+      syncSliders();
+      update();
+    });
+    container.appendChild(b);
+  }
+}
+
+function updateStepButtons() {
+  for (const b of el.bitsSteps.children) b.setAttribute('aria-pressed', String(+b.dataset.value === state.bits));
+  for (const b of el.fsSteps.children) b.setAttribute('aria-pressed', String(+b.dataset.value === state.fs));
+}
+
+function syncSliders() {
+  el.bits.value = state.bits;
+  el.fs.value = Math.round(posOf.fs(state.fs) * SLIDER_RES);
+  el.freq.value = Math.round(posOf.freq(state.freq) * SLIDER_RES);
+  el.amp.value = state.ampDb;
+}
+
+const FIELDS = [
+  { key: 'bits', stateKey: 'bits', input: el.bitsValue, slider: el.bits, fmt: () => fmtBits(state.bits) },
+  { key: 'fs', stateKey: 'fs', input: el.fsValue, slider: el.fs, fmt: () => fmtFreq(state.fs) },
+  { key: 'freq', stateKey: 'freq', input: el.freqValue, slider: el.freq, fmt: () => fmtFreq(state.freq) },
+  { key: 'amp', stateKey: 'ampDb', input: el.ampValue, slider: el.amp, fmt: () => fmtDb(state.ampDb) }
+];
+
+function updateValues() {
+  for (const fd of FIELDS) {
+    const text = fd.fmt();
+    if (document.activeElement !== fd.input) fd.input.value = text;
+    fd.slider.setAttribute('aria-valuetext', text);
+  }
+}
+
+function commitField(fd) {
+  const v = parseEntry(fd.key, fd.input.value);
+  if (v === null) {
+    fd.input.classList.add('invalid');
+    fd.input.title = L().inputInvalid;
+    return false;
+  }
+  fd.input.classList.remove('invalid');
+  fd.input.title = '';
+  state[fd.stateKey] = v;
+  syncSliders();
+  update();
+  fd.input.value = fd.fmt();
+  return true;
+}
+
+for (const fd of FIELDS) {
+  fd.input.addEventListener('focus', () => fd.input.select());
+  fd.input.addEventListener('keydown', e => {
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      if (commitField(fd)) fd.input.select();
+    } else if (e.key === 'Escape') {
+      e.preventDefault();
+      fd.input.classList.remove('invalid');
+      fd.input.value = fd.fmt();
+      fd.input.select();
+    }
+  });
+  fd.input.addEventListener('blur', () => {
+    if (!commitField(fd)) {
+      fd.input.classList.remove('invalid');
+      fd.input.value = fd.fmt();
+    }
+  });
+}
+
+/* Legende (SVG-Symbole) */
+const SWATCH = {
+  line: (c, w, dash) => `<svg width="22" height="10" aria-hidden="true"><line x1="1" y1="5" x2="21" y2="5" stroke="${c}" stroke-width="${w}"${dash ? ` stroke-dasharray="${dash}"` : ''}/></svg>`,
+  dot: (c, r) => `<svg width="10" height="10" aria-hidden="true"><circle cx="5" cy="5" r="${r}" fill="${c}"/></svg>`,
+  bar: c => `<svg width="10" height="12" aria-hidden="true"><line x1="5" y1="2" x2="5" y2="10" stroke="${c}" stroke-width="3" stroke-linecap="round"/></svg>`
+};
+
+function buildLegend(m) {
+  const t = L();
+  const item = (sw, text) => `<span class="item">${sw}<span>${text}</span></span>`;
+  const toggle = (id, checked, sw, text) =>
+    `<label class="item"><input type="checkbox" id="${id}"${checked ? ' checked' : ''}>${sw}<span>${text}</span></label>`;
+  let html = '';
+  html += item(SWATCH.line(COLORS.analog, 1.5), t.legendAnalog);
+  html += item(SWATCH.dot(COLORS.sample, 3), t.legendSample);
+  html += item(SWATCH.dot(COLORS.quant, 2.5), t.legendQuant);
+  html += item(SWATCH.line(COLORS.grid, 1, '2 3'), t.legendGrid);
+  html += item(SWATCH.bar(COLORS.error), t.legendError);
+  html += toggle('tgl-hold', state.showHold, SWATCH.line(COLORS.quant, 1.5), t.legendHold);
+  html += toggle('tgl-recon', state.showRecon, SWATCH.line(COLORS.recon, 1.5), t.legendRecon);
+  if (m.alias.aliased) html += item(SWATCH.line(COLORS.alias, 2, '6 4'), t.legendAlias(fmtFreq(m.alias.freq)));
+  el.legend.innerHTML = html;
+  $('tgl-hold').addEventListener('change', e => { state.showHold = e.target.checked; scheduleDraw(); });
+  $('tgl-recon').addEventListener('change', e => { state.showRecon = e.target.checked; scheduleDraw(); });
+}
+
+function updateNote(m, gridInfo) {
+  const t = L();
+  const parts = [];
+  if (m.alias.aliased) {
+    const span = document.createElement('span');
+    span.className = 'warn';
+    span.textContent = t.aliasNote(fmtFreq(m.freq), fmtFreq(m.fs / 2), fmtFreq(m.alias.freq), m.alias.sign < 0);
+    parts.push(span);
+  }
+  if (gridInfo === -1) parts.push(document.createTextNode(t.gridHidden));
+  else if (gridInfo > 1) parts.push(document.createTextNode(t.gridThinned(gridInfo)));
+  el.note.replaceChildren();
+  parts.forEach((p, i) => {
+    if (i > 0) el.note.appendChild(document.createTextNode(' · '));
+    el.note.appendChild(p);
+  });
+}
+
+/* =====================================================================
+ * Interaktion im Plot: Strg+Rad, Ziehen, Zwei-Finger-Zoom, Tastatur
+ * ===================================================================== */
+function plotAnchor(clientX, clientY) {
+  const r = el.canvas.getBoundingClientRect();
+  if (!plotGeom) return { ax: 0.5, ay: 0 };
+  const ax = clamp((clientX - r.left - plotGeom.left) / plotGeom.pw, 0, 1);
+  const ay = clamp(1 - 2 * (clientY - r.top - plotGeom.top) / plotGeom.ph, -1, 1);
+  return { ax, ay };
+}
+
+el.canvas.addEventListener('wheel', e => {
+  if (!(e.ctrlKey || e.metaKey)) return;       // ohne Strg: Seite scrollt normal
+  e.preventDefault();
+  const delta = e.deltaY || e.deltaX;
+  const factor = Math.exp(clamp(delta, -300, 300) * 0.002);
+  const { ax, ay } = plotAnchor(e.clientX, e.clientY);
+  if (e.shiftKey) zoomAmp(factor, ay); else zoomTime(factor, ax);
+}, { passive: false });
+
+const pointers = new Map();
+let gesture = null;
+
+function startGesture() {
+  const pts = [...pointers.values()];
+  const v = state.view;
+  if (pts.length === 1) {
+    gesture = { type: 'pan', x: pts[0].x, y: pts[0].y, t0: v.t0, yc: v.yc };
+  } else if (pts.length >= 2) {
+    const [a, b] = pts;
+    gesture = {
+      type: 'pinch',
+      dx: Math.abs(a.x - b.x), dy: Math.abs(a.y - b.y),
+      cx: (a.x + b.x) / 2, cy: (a.y + b.y) / 2,
+      T: v.T, t0: v.t0, yr: v.yr, yc: v.yc
+    };
+  }
+}
+
+el.canvas.addEventListener('pointerdown', e => {
+  el.canvas.setPointerCapture(e.pointerId);
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  el.canvas.classList.add('dragging');
+  startGesture();
+});
+
+el.canvas.addEventListener('pointermove', e => {
+  if (!pointers.has(e.pointerId) || !gesture || !plotGeom) return;
+  pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
+  const v = state.view;
+  const pts = [...pointers.values()];
+  if (gesture.type === 'pan' && pts.length === 1) {
+    v.t0 = gesture.t0 - (pts[0].x - gesture.x) / plotGeom.pw * v.T;
+    v.yc = gesture.yc + (pts[0].y - gesture.y) / (plotGeom.ph / 2) * v.yr;
+  } else if (gesture.type === 'pinch' && pts.length >= 2) {
+    const [a, b] = pts;
+    const r = el.canvas.getBoundingClientRect();
+    if (gesture.dx > 30) {
+      const ax = clamp((gesture.cx - r.left - plotGeom.left) / plotGeom.pw, 0, 1);
+      const ta = gesture.t0 + ax * gesture.T;
+      v.T = clamp(gesture.T * gesture.dx / Math.max(1, Math.abs(a.x - b.x)), VIEW.minT, VIEW.maxT);
+      v.t0 = ta - ax * v.T;
+    }
+    if (gesture.dy > 30) {
+      const ay = clamp(1 - 2 * (gesture.cy - r.top - plotGeom.top) / plotGeom.ph, -1, 1);
+      const va = gesture.yc + ay * gesture.yr;
+      v.yr = gesture.yr * gesture.dy / Math.max(1, Math.abs(a.y - b.y));
+      v.yc = va - ay * v.yr;
+    }
+  }
+  clampView();
+  scheduleDraw();
+});
+
+function endPointer(e) {
+  pointers.delete(e.pointerId);
+  if (pointers.size === 0) { gesture = null; el.canvas.classList.remove('dragging'); }
+  else startGesture();
+}
+el.canvas.addEventListener('pointerup', endPointer);
+el.canvas.addEventListener('pointercancel', endPointer);
+
+el.canvas.addEventListener('keydown', e => {
+  const plus = ['+', '=', '*', 'Add'].includes(e.key) || e.code === 'NumpadAdd';
+  const minus = ['-', '_', 'Subtract'].includes(e.key) || e.code === 'NumpadSubtract';
+  let handled = true;
+  if (plus) { if (e.shiftKey) zoomAmp(1 / VIEW.zoomStep); else zoomTime(1 / VIEW.zoomStep); }
+  else if (minus) { if (e.shiftKey) zoomAmp(VIEW.zoomStep); else zoomTime(VIEW.zoomStep); }
+  else if (e.key === 'ArrowLeft') pan(-VIEW.panStep, 0);
+  else if (e.key === 'ArrowRight') pan(VIEW.panStep, 0);
+  else if (e.key === 'ArrowUp') pan(0, VIEW.panStep);
+  else if (e.key === 'ArrowDown') pan(0, -VIEW.panStep);
+  else if (e.key === 'Home') resetView();
+  else handled = false;
+  if (handled) e.preventDefault();
+});
+
+$('zoom-t-in').addEventListener('click', () => zoomTime(1 / VIEW.zoomStep));
+$('zoom-t-out').addEventListener('click', () => zoomTime(VIEW.zoomStep));
+$('zoom-y-in').addEventListener('click', () => zoomAmp(1 / VIEW.zoomStep));
+$('zoom-y-out').addEventListener('click', () => zoomAmp(VIEW.zoomStep));
+$('zoom-periods').addEventListener('click', zoomToPeriods);
+$('zoom-reset').addEventListener('click', resetView);
+
+/* =====================================================================
+ * Ablauf
+ * ===================================================================== */
+let legendKey = '';
+let drawPending = false;
+
+function scheduleDraw() {
+  if (drawPending) return;
+  drawPending = true;
+  requestAnimationFrame(() => {
+    drawPending = false;
+    const m = computeModel();
+    const key = [state.lang, m.alias.aliased, m.alias.aliased ? m.alias.freq : 0].join('|');
+    if (key !== legendKey) {
+      const focusedId = document.activeElement && document.activeElement.id;
+      buildLegend(m);
+      legendKey = key;
+      if (focusedId && focusedId.startsWith('tgl-') && $(focusedId)) $(focusedId).focus();
+    }
+    const { gridInfo } = drawMain(m);
+    updateNote(m, gridInfo);
+  });
+}
+
+function update() {
+  updateValues();
+  updateStepButtons();
+  updateNyquistMark();
+  scheduleDraw();
+  audioSync();
+}
+
+function applyLanguage() {
+  const t = L();
+  document.documentElement.lang = state.lang;
+  document.title = t.title;
+  document.querySelectorAll('[data-i18n]').forEach(n => { n.textContent = t[n.dataset.i18n]; });
+  document.querySelectorAll('[data-lang]').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.lang === state.lang)));
+  $('zoom-t-in').setAttribute('aria-label', t.zoomInTime);
+  $('zoom-t-out').setAttribute('aria-label', t.zoomOutTime);
+  $('zoom-y-in').setAttribute('aria-label', t.zoomInAmp);
+  $('zoom-y-out').setAttribute('aria-label', t.zoomOutAmp);
+  el.canvas.setAttribute('aria-label', t.plotLabel);
+  buildStaticMarks();
+  buildSteps(el.bitsSteps, 'bits', fmtBits);
+  buildSteps(el.fsSteps, 'fs', fmtFreq);
+  legendKey = '';
+  buildAudioHint();
+  update();
+}
+
+el.bits.addEventListener('input', () => { state.bits = +el.bits.value; update(); });
+el.fs.addEventListener('input', () => {
+  state.fs = round3(logVal(el.fs.value / SLIDER_RES, PARAMS.fs.min, PARAMS.fs.max));
+  update();
+});
+el.freq.addEventListener('input', () => {
+  state.freq = round3(logVal(el.freq.value / SLIDER_RES, PARAMS.freq.min, PARAMS.freq.max));
+  update();
+});
+el.amp.addEventListener('input', () => { state.ampDb = +el.amp.value; update(); });
+
+document.querySelectorAll('[data-lang]').forEach(b => b.addEventListener('click', () => {
+  state.lang = b.dataset.lang;
+  applyLanguage();
+}));
+
+/* Beschriftungen der Slider hängen von der Breite ab */
+let lastControlsWidth = 0;
+new ResizeObserver(entries => {
+  const wNow = Math.round(entries[0].contentRect.width);
+  if (wNow !== lastControlsWidth) {
+    lastControlsWidth = wNow;
+    buildStaticMarks();
+    updateNyquistMark();
+  }
+}).observe(document.querySelector('.controls'));
+new ResizeObserver(scheduleDraw).observe(document.querySelector('.plot-main'));
+
+/* =====================================================================
+ * Phase 2: Hörbarmachung (Web Audio)
+ * ===================================================================== */
+const AUDIO = {
+  maxSeconds: 20,
+  crossfade: 0.015,        // s, A/B-Umschaltung
+  fade: 0.012,             // s, Ein-/Ausblenden bei Play/Stop
+  /*
+   * Linearphasige Filter (Kaiser-gefensterter sinc), dadurch feste Latenz des simulierten Pfads:
+   * band…   Anti-Aliasing- und Rekonstruktions-Tiefpass, steilflankig knapp unter fs/2 (realistisch)
+   * interp… Bandbegrenzung auf die Ausgaberate beim Abtasten bzw. für die Treppe (ungefiltert)
+   */
+  bandTaps: 32,            // halbe Kernlänge in simulierten Abtastperioden
+  bandCutoff: 0.46,        // relativ zur simulierten Abtastrate
+  interpTaps: 16,          // halbe Kernlänge in Ausgabe-Samples
+  interpCutoff: 0.49,      // relativ zur Ausgaberate
+  kaiserBeta: 8,
+  kernelOversampling: 256,
+  dcHz: 5,                 // DC-Sperre am Ausgang des simulierten Pfads
+  /* Noise Shaping (Fehlerrückkopplung): Rauschübertragung 1 − Σ h_k z^−k */
+  shapeWeighted: [2.412, -3.370, 3.937, -4.174, 3.353, -2.205, 1.281, -0.569, 0.0847],  // Wannamaker, F-gewichtet, 9 Koeff.
+  shapeSimple: [1],                                                                   // Hochpass 1. Ordnung
+  shapeWeightedRates: [44100, 48000],
+  shapeErrorLimit: 1.5,    // Rückgeführter Fehler je Abtastwert, in LSB
+  shapeFeedbackLimit: 0.5, // Summe der Rückkopplung, relativ zur Vollaussteuerung
+  limiter: { threshold: -1, knee: 0, ratio: 20, attack: 0.002, release: 0.1 }
+};
+
+const audio = {
+  ctx: null, ready: null, unsupported: false, workletFailed: false,
+  buffer: null, name: '', truncated: false, error: '',
+  source: null, playing: false,
+  loop: false, ab: 'a', dither: 'off', filter: 'real',   // dither: 'off' | 'tpdf' | 'ns'
+  nodes: null
+};
+
+/**
+ * Verarbeitung im AudioWorklet. Läuft im Worklet-Kontext (globales sampleRate),
+ * nutzt die mitgelieferten DSP-Funktionen der Seite.
+ */
+function simWorklet() {
+  function besselI0(x) {
+    let sum = 1, term = 1;
+    for (let k = 1; k < 50 && term > 1e-12 * sum; k++) { term *= (x / (2 * k)) ** 2; sum += term; }
+    return sum;
+  }
+
+  /* Tabelle h(τ) = 2fc · sinc(2fc · τ) · Kaiser(τ / K), τ in Abtastperioden, 0 ≤ τ ≤ K */
+  function kernelTable(K, fc, beta, os) {
+    const t = new Float64Array(K * os + 2), norm = besselI0(beta);
+    for (let j = 0; j < t.length; j++) {
+      const tau = j / os, r = tau / K;
+      if (r >= 1) continue;
+      const x = 2 * Math.PI * fc * tau;
+      t[j] = 2 * fc * (x === 0 ? 1 : Math.sin(x) / x) * besselI0(beta * Math.sqrt(1 - r * r)) / norm;
+    }
+    return t;
+  }
+
+  function kernelAt(t, tau) {
+    const a = Math.abs(tau) * SIM.os, j = a | 0;
+    return j + 1 < t.length ? t[j] + (a - j) * (t[j + 1] - t[j]) : 0;
+  }
+
+  /* Sprungantwort S(x) = ∫ h(τ) dτ von −K bis x, normiert auf S(K) = 1; Tabelle über −K … K */
+  function stepTable(t, K, os) {
+    const n = 2 * K * os + 2, s = new Float64Array(n);
+    let acc = 0;
+    for (let j = 1; j < n; j++) {
+      acc += 0.5 * (kernelAt(t, (j - 1) / os - K) + kernelAt(t, j / os - K)) / os;
+      s[j] = acc;
+    }
+    return s.map(v => v / acc);
+  }
+
+  function stepAt(s, x, K) {
+    if (x <= -K) return 0;
+    if (x >= K) return 1;
+    const a = (x + K) * SIM.os, j = a | 0;
+    return s[j] + (a - j) * (s[j + 1] - s[j]);
+  }
+
+  const BAND_KERNEL = kernelTable(SIM.bandTaps, SIM.bandCutoff, SIM.kaiserBeta, SIM.os);
+  const IN_KERNEL = kernelTable(SIM.interpTaps, SIM.interpCutoff, SIM.kaiserBeta, SIM.os);
+  const IN_STEP = stepTable(IN_KERNEL, SIM.interpTaps, SIM.os);
+  const Q_RING = 256;   // ≥ 2 · bandTaps + 2 simulierte Abtastwerte
+
+  class SimProcessor extends AudioWorkletProcessor {
+    constructor() {
+      super();
+      this.p = { bits: 16, fs: sampleRate, dither: 'off', filter: 'real', latency: 0 };
+      this.chans = [];
+      this.dcR = 1 - 2 * Math.PI * SIM.dcHz / sampleRate;
+      this.port.onmessage = e => { Object.assign(this.p, e.data); this.configure(); };
+      this.configure();
+    }
+
+    configure() {
+      // neues Abtastraster bzw. neue Latenz: Zustände zurücksetzen
+      if (this.p.fs !== this.fsActive || this.p.latency !== this.latencyActive) this.chans = [];
+      this.fsActive = this.p.fs;
+      this.latencyActive = this.p.latency;
+      this.reduce = this.p.fs < sampleRate;
+      this.step = this.p.fs / sampleRate;
+      let ring = 64;
+      while (ring < Math.max(this.p.latency, 2 * SIM.interpTaps) + 16) ring *= 2;
+      this.inRing = ring;
+      this.shape = SIM.shapeWeightedRates.includes(this.p.fs) ? SIM.shapeWeighted : SIM.shapeSimple;
+    }
+
+    channel(c) {
+      if (!this.chans[c]) {
+        this.chans[c] = {
+          xin: new Float64Array(this.inRing), q: new Float64Array(Q_RING),
+          i: 0, m: 0,                     // Index Ausgabe-Sample / nächster simulierter Abtastwert
+          err: new Float64Array(SIM.shapeWeighted.length), errPos: 0,
+          dcX: 0, dcY: 0
+        };
+      }
+      return this.chans[c];
+    }
+
+    /*
+     * Abtastratenreduktion, ein Aufruf je Ausgabe-Sample. Zeitpunkte exakt (m / fs, nicht gerundet).
+     * realistisch: Abtastwert = Eingang durch linearphasigen Anti-Aliasing-Tiefpass (bandCutoff · fs),
+     *              Rekonstruktion mit demselben Tiefpass.
+     * ungefiltert: Abtastwert = Eingang zum Zeitpunkt (nur auf die Ausgaberate bandbegrenzt),
+     *              Ausgabe = Sample-and-Hold-Treppe, auf die Ausgaberate bandbegrenzt
+     *              (Spiegelanteile unterhalb der halben Ausgaberate bleiben, kein Raster-Effekt).
+     * Feste Latenz: p.latency Ausgabe-Samples (siehe simLatency).
+     */
+    resample(s, v, real) {
+      const L = SIM.interpTaps, K = SIM.bandTaps, step = this.step;
+      const R = this.inRing - 1, Q = Q_RING - 1, xin = s.xin, q = s.q;
+      xin[s.i & R] = v;
+      const reach = real ? K / step : L;   // benötigte Eingangs-Samples beidseits des Abtastzeitpunkts
+      while (s.m / step + reach <= s.i) {
+        const u = s.m / step, hi = Math.floor(u + reach);
+        let acc = 0;
+        if (real) {
+          for (let n = Math.max(0, Math.ceil(u - reach)); n <= hi; n++) acc += xin[n & R] * kernelAt(BAND_KERNEL, (u - n) * step);
+          acc *= step;
+        } else {
+          for (let n = Math.max(0, Math.ceil(u - reach)); n <= hi; n++) acc += xin[n & R] * kernelAt(IN_KERNEL, u - n);
+        }
+        q[s.m & Q] = this.quantize(acc, s);
+        s.m++;
+      }
+      const t = s.i - this.p.latency;    // Ausgabezeitpunkt in Ausgabe-Samples
+      s.i++;
+      if (t < 0) return 0;
+      if (real) {
+        const tau = t * step, b = Math.floor(tau);
+        let acc = 0;
+        for (let n = Math.max(0, b - K + 1); n <= b + K; n++) acc += q[n & Q] * kernelAt(BAND_KERNEL, tau - n);
+        return acc;
+      }
+      // Treppe als Summe von Stufen: y = Σ (q[m] − q[m−1]) · S(t − m / fs)
+      const lo = Math.max(0, Math.ceil((t - L) * step)), hi = Math.floor((t + L) * step);
+      let y = lo > 0 ? q[(lo - 1) & Q] : 0;
+      for (let m = lo; m <= hi; m++) y += (q[m & Q] - (m > 0 ? q[(m - 1) & Q] : 0)) * stepAt(IN_STEP, t - m / step, L);
+      return y;
+    }
+
+    /* Quantisierung mit optionalem TPDF-Dither und Noise Shaping (Fehlerrückkopplung) */
+    quantize(v, s) {
+      const bits = this.p.bits, lsb = DSP.lsb(bits), mode = this.p.dither;
+      if (mode === 'off') return DSP.quantize(v, bits);
+      const tpdf = (Math.random() + Math.random() - 1) * lsb;   // TPDF ±1 LSB
+      if (mode !== 'ns') return DSP.quantize(v + tpdf, bits);
+      const h = this.shape, e = s.err, n = e.length;
+      let fb = 0;
+      for (let k = 0; k < h.length; k++) fb += h[k] * e[(s.errPos - 1 - k + 2 * n) % n];
+      fb = Math.max(-SIM.shapeFeedbackLimit, Math.min(SIM.shapeFeedbackLimit, fb));
+      const w = v - fb;
+      const q = DSP.quantize(w + tpdf, bits);
+      // Fehler nur im Aussteuerungsbereich zurückführen und begrenzen: kein Aufschwingen bei 1–4 Bit
+      const err = q - Math.max(-1, Math.min(1, w));
+      const lim = SIM.shapeErrorLimit * lsb;
+      e[s.errPos] = Math.max(-lim, Math.min(lim, err));
+      s.errPos = (s.errPos + 1) % n;
+      return q;
+    }
+
+    process(inputs, outputs) {
+      const inp = inputs[0], out = outputs[0];
+      const real = this.p.filter === 'real';
+      for (let c = 0; c < out.length; c++) {
+        const y = out[c], x = inp && inp[c];
+        if (!x) { y.fill(0); this.chans[c] = null; continue; }   // Quelle gestoppt: kein Nachklingen beim Neustart
+        const s = this.channel(c);
+        for (let i = 0; i < y.length; i++) {
+          const o = this.reduce ? this.resample(s, x[i], real) : this.quantize(x[i], s);
+          const d = o - s.dcX + this.dcR * s.dcY;                   // DC-Sperre (Mid-Rise-Offset)
+          s.dcX = o;
+          s.dcY = d;
+          y[i] = d;
+        }
+      }
+      return true;
+    }
+  }
+
+  registerProcessor('sim-processor', SimProcessor);
+}
+
+/* Worklet-Quelltext: DSP-Funktionen der Seite + Prozessor, als Blob-URL ladbar */
+function workletSource() {
+  const members = Object.entries(DSP).map(([k, f]) => {
+    const src = f.toString();
+    return src.startsWith(k + '(') ? src : `${k}: ${src}`;
+  });
+  const sim = {
+    dcHz: AUDIO.dcHz,
+    bandTaps: AUDIO.bandTaps, bandCutoff: AUDIO.bandCutoff,
+    interpTaps: AUDIO.interpTaps, interpCutoff: AUDIO.interpCutoff,
+    kaiserBeta: AUDIO.kaiserBeta, os: AUDIO.kernelOversampling,
+    shapeWeighted: AUDIO.shapeWeighted, shapeSimple: AUDIO.shapeSimple, shapeWeightedRates: AUDIO.shapeWeightedRates,
+    shapeErrorLimit: AUDIO.shapeErrorLimit, shapeFeedbackLimit: AUDIO.shapeFeedbackLimit
+  };
+  return `const DSP = {\n${members.join(',\n')}\n};\nconst SIM = ${JSON.stringify(sim)};\n(${simWorklet.toString()})();\n`;
+}
+
+/* Blob-URL; bei Seiten ohne Ursprung (file://) ersatzweise data:-URL */
+async function loadWorklet(ctx) {
+  const src = workletSource();
+  const url = URL.createObjectURL(new Blob([src], { type: 'application/javascript' }));
+  try {
+    await ctx.audioWorklet.addModule(url);
+  } catch (e) {
+    await ctx.audioWorklet.addModule('data:application/javascript;charset=utf-8,' + encodeURIComponent(src));
+  } finally {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function initAudio() {
+  if (audio.ready) return audio.ready;
+  if (!window.AudioContext || !window.AudioWorkletNode) {
+    audio.unsupported = true;
+    renderAudio();
+    return Promise.reject(new Error('unsupported'));
+  }
+  audio.ctx = new AudioContext();
+  audio.ready = loadWorklet(audio.ctx).catch(e => {
+    audio.workletFailed = true;
+    renderAudio();
+    throw e;
+  });
+  return audio.ready;
+}
+
+function makeLimiter(ctx) {
+  const l = ctx.createDynamicsCompressor();
+  for (const k of Object.keys(AUDIO.limiter)) l[k].value = AUDIO.limiter[k];
+  return l;
+}
+
+/*
+ * Latenz des simulierten Pfads in Ausgabe-Samples (ganzzahlig); der Original-Pfad wird um
+ * denselben Wert verzögert, damit A/B zeitgleich umschaltet.
+ * realistisch: Anti-Aliasing + Rekonstruktion je bandTaps / fs; ungefiltert: 2 · interpTaps.
+ * Für beide Modi gilt der größere Wert, damit ein Filterwechsel die Zeitlage nicht ändert.
+ */
+function simLatency(fs, sr) {
+  if (fs >= sr) return 0;
+  return Math.max(Math.ceil(2 * AUDIO.bandTaps * sr / fs - 1e-9), 2 * AUDIO.interpTaps + 1);
+}
+
+/* Signalweg: Quelle → [A: Verzögerung → DC-Sperre → Limiter] / [B: Worklet → Limiter] → Crossfade → Master */
+function buildGraph(channels) {
+  const ctx = audio.ctx;
+  if (audio.nodes) Object.values(audio.nodes).forEach(n => n.disconnect());
+  const sim = new AudioWorkletNode(ctx, 'sim-processor', {
+    numberOfInputs: 1, numberOfOutputs: 1, outputChannelCount: [channels],
+    channelCount: channels, channelCountMode: 'explicit', channelInterpretation: 'discrete'
+  });
+  const delayA = ctx.createDelay(1);
+  const r = 1 - 2 * Math.PI * AUDIO.dcHz / ctx.sampleRate;   // dieselbe DC-Sperre wie im Worklet
+  const dcA = ctx.createIIRFilter([1, -1], [1, -r]);
+  const limA = makeLimiter(ctx), limB = makeLimiter(ctx);
+  const gainA = ctx.createGain(), gainB = ctx.createGain(), master = ctx.createGain();
+  gainA.gain.value = audio.ab === 'a' ? 1 : 0;
+  gainB.gain.value = audio.ab === 'b' ? 1 : 0;
+  master.gain.value = 0;
+  delayA.connect(dcA).connect(limA).connect(gainA).connect(master);
+  sim.connect(limB).connect(gainB).connect(master);
+  master.connect(ctx.destination);
+  audio.nodes = { sim, delayA, dcA, limA, limB, gainA, gainB, master };
+}
+
+function ramp(param, target, dur) {
+  const t = audio.ctx.currentTime;
+  param.cancelScheduledValues(t);
+  param.setValueAtTime(param.value, t);
+  param.linearRampToValueAtTime(target, t + dur);
+}
+
+/* Parameter an den simulierten Pfad übergeben (bei jeder Änderung) */
+function audioSync() {
+  if (audio.nodes) {
+    const sr = audio.ctx.sampleRate, latency = simLatency(state.fs, sr);
+    audio.nodes.sim.port.postMessage({ bits: state.bits, fs: state.fs, dither: audio.dither, filter: audio.filter, latency });
+    const delay = audio.nodes.delayA.delayTime;
+    if (Math.round(delay.value * sr) !== latency) delay.setValueAtTime(latency / sr, audio.ctx.currentTime);
+  }
+  renderAudio();
+}
+
+async function loadAudioFile(file) {
+  if (!file) return;
+  try {
+    await initAudio();
+    const decoded = await audio.ctx.decodeAudioData(await file.arrayBuffer());
+    const maxLen = Math.floor(AUDIO.maxSeconds * decoded.sampleRate);
+    let buf = decoded;
+    audio.truncated = decoded.length > maxLen;
+    if (audio.truncated) {
+      buf = new AudioBuffer({ length: maxLen, numberOfChannels: decoded.numberOfChannels, sampleRate: decoded.sampleRate });
+      for (let c = 0; c < decoded.numberOfChannels; c++) buf.copyToChannel(decoded.getChannelData(c).subarray(0, maxLen), c);
+    }
+    stopAudio(true);
+    audio.buffer = buf;
+    audio.name = file.name;
+    audio.error = '';
+    buildGraph(buf.numberOfChannels);
+  } catch (e) {
+    if (!audio.unsupported && !audio.workletFailed) audio.error = 'decode';
+  }
+  audioSync();
+}
+
+async function playAudio() {
+  if (!audio.buffer) return;
+  await initAudio();
+  if (audio.ctx.state !== 'running') await audio.ctx.resume();
+  stopAudio(true);
+  const src = audio.ctx.createBufferSource();
+  src.buffer = audio.buffer;
+  src.loop = audio.loop;
+  src.connect(audio.nodes.delayA);
+  src.connect(audio.nodes.sim);
+  src.onended = () => {
+    if (audio.source === src) { audio.source = null; audio.playing = false; renderAudio(); }
+  };
+  audio.source = src;
+  audio.playing = true;
+  ramp(audio.nodes.master.gain, 1, AUDIO.fade);
+  src.start();
+  renderAudio();
+}
+
+/* Stopp mit kurzem Ausblenden; immediate: ohne Ausblenden (Neustart/Dateiwechsel) */
+function stopAudio(immediate) {
+  const src = audio.source;
+  if (!src) return;
+  audio.source = null;
+  audio.playing = false;
+  const t = audio.ctx.currentTime;
+  if (immediate) {
+    audio.nodes.master.gain.cancelScheduledValues(t);
+    audio.nodes.master.gain.setValueAtTime(0, t);
+    src.stop();
+  } else {
+    ramp(audio.nodes.master.gain, 0, AUDIO.fade);
+    src.stop(t + AUDIO.fade + 0.005);
+  }
+  renderAudio();
+}
+
+function setAB(which) {
+  audio.ab = which;
+  if (audio.nodes) {
+    ramp(audio.nodes.gainA.gain, which === 'a' ? 1 : 0, AUDIO.crossfade);
+    ramp(audio.nodes.gainB.gain, which === 'b' ? 1 : 0, AUDIO.crossfade);
+  }
+  renderAudio();
+}
+
+function buildAudioHint() {
+  const list = $('hint-list');
+  list.replaceChildren();
+  for (const [term, text] of L().hintItems) {
+    const li = document.createElement('li');
+    if (term) {
+      const b = document.createElement('strong');
+      b.textContent = term;
+      li.append(b, ' ');
+    }
+    li.append(text);
+    list.appendChild(li);
+  }
+}
+
+function renderAudio() {
+  const t = L();
+  const has = !!audio.buffer;
+  $('audio-play').disabled = !has;
+  $('audio-stop').disabled = !audio.playing;
+  $('audio-play').setAttribute('aria-pressed', String(audio.playing));
+  $('ab-a').setAttribute('aria-pressed', String(audio.ab === 'a'));
+  $('ab-b').setAttribute('aria-pressed', String(audio.ab === 'b'));
+  for (const m of ['off', 'tpdf', 'ns']) $('dith-' + m).setAttribute('aria-pressed', String(audio.dither === m));
+  $('flt-real').setAttribute('aria-pressed', String(audio.filter === 'real'));
+  $('flt-raw').setAttribute('aria-pressed', String(audio.filter === 'raw'));
+  $('audio-loop').checked = audio.loop;
+
+  $('audio-name').textContent = has
+    ? t.audioInfo(audio.name, `${fmtNum(audio.buffer.duration, { maximumFractionDigits: 1 })} ${L().unitS}`, t.audioChannels(audio.buffer.numberOfChannels))
+      + (audio.truncated ? ` · ${t.audioTruncated}` : '')
+    : '';
+  $('audio-name').title = audio.name;
+
+  const status = $('audio-status');
+  status.replaceChildren();
+  let msg = '';
+  if (audio.unsupported || audio.workletFailed) msg = t.audioUnsupported;
+  else if (audio.error) msg = t.audioDecodeError;
+  else if (audio.ctx && has && state.fs > audio.ctx.sampleRate) msg = t.audioRateHint(fmtFreq(state.fs), fmtFreq(audio.ctx.sampleRate));
+  if (msg) {
+    const span = document.createElement('span');
+    span.className = 'warn';
+    span.textContent = msg;
+    status.appendChild(span);
+  }
+}
+
+$('audio-choose').addEventListener('click', () => $('audio-file').click());
+$('audio-file').addEventListener('change', e => { loadAudioFile(e.target.files[0]); e.target.value = ''; });
+$('audio-play').addEventListener('click', playAudio);
+$('audio-stop').addEventListener('click', () => stopAudio(false));
+$('audio-loop').addEventListener('change', e => {
+  audio.loop = e.target.checked;
+  if (audio.source) audio.source.loop = audio.loop;
+});
+$('ab-a').addEventListener('click', () => setAB('a'));
+$('ab-b').addEventListener('click', () => setAB('b'));
+for (const m of ['off', 'tpdf', 'ns']) $('dith-' + m).addEventListener('click', () => { audio.dither = m; audioSync(); });
+$('flt-real').addEventListener('click', () => { audio.filter = 'real'; audioSync(); });
+$('flt-raw').addEventListener('click', () => { audio.filter = 'raw'; audioSync(); });
+
+/* Drag & Drop: ganze Seite als Ablagefläche, Audiobereich hervorgehoben */
+let dragDepth = 0;
+const audioPanel = $('audio');
+document.addEventListener('dragenter', e => {
+  if (![...(e.dataTransfer && e.dataTransfer.types || [])].includes('Files')) return;
+  e.preventDefault();
+  dragDepth++;
+  audioPanel.classList.add('dragover');
+});
+document.addEventListener('dragover', e => { if (dragDepth > 0) e.preventDefault(); });
+document.addEventListener('dragleave', () => {
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) audioPanel.classList.remove('dragover');
+});
+document.addEventListener('drop', e => {
+  if (dragDepth === 0) return;
+  e.preventDefault();
+  dragDepth = 0;
+  audioPanel.classList.remove('dragover');
+  loadAudioFile(e.dataTransfer.files[0]);
+});
+
+syncSliders();
+applyLanguage();
+</script>
+</body>
+</html>
